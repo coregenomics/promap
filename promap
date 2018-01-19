@@ -37,6 +37,8 @@ check_dependencies() {
     deps=(
 	[umi_tools]=https://github.com/CGATOxford/UMI-tools
 	[fastx_clipper]=http://hannonlab.cshl.edu/fastx_toolkit
+	[fastx_trimmer]=http://hannonlab.cshl.edu/fastx_toolkit
+	[fastx_reverse_complement]=http://hannonlab.cshl.edu/fastx_toolkit
 	[bowtie]=http://bowtie-bio.sourceforge.net
 	[samtools]=http://www.htslib.org
 	[bedtools]=https://bedtools.readthedocs.io
@@ -225,6 +227,31 @@ trim() {
 }
 
 
+# Reverse complement reads because illumina reads from 5' end.
+#
+# Globals: config current
+# Arguments: None
+# Returns: Minimal description of processing.
+rev_complement() {
+    local log
+
+    log=${current[log_dir]}/04_rev_complement.log
+    current[file_rev_complement]=${config[tmp_dir]}/${current[prefix]}_rev_complement.fastq
+    echo "- Reverse complementing reads from 5' to 3'..."
+    is_non_empty_file ${current[file_rev_complement]} && return
+
+    fastx_reverse_complement \
+	-Q33 \
+	-i ${current[file_trimmed]} \
+	-o ${current[file_rev_complement]} |& tee $log || {
+	echo >&2 "...error encountered!  Check $log"
+	exit 1
+    }
+
+    echo "  ... saved file: ${current[file_rev_complement]}"
+}
+
+
 # Main program to process PRO-seq reads.
 #
 # Globals: current
@@ -255,6 +282,7 @@ main() {
 	umi_extract
 	clip
 	trim
+	rev_complement
     done
 }
 
