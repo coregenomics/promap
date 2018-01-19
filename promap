@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+
+# PRO-seq mapping pipeline.
+#
+# Process FASTQ PRO-seq reads and create BAM files.
+#
+# Usage: ./promap [optional path to promap.cfg]
+#
+# Requirements:
+# - umi_tools     --- https://github.com/CGATOxford/UMI-tools
+# - fastx-toolkit --- http://hannonlab.cshl.edu/fastx_toolkit
+# - bowtie        --- http://bowtie-bio.sourceforge.net
+# - samtools      --- http://www.htslib.org
+# - bedtools      --- https://bedtools.readthedocs.io
+#
+# Written at the University of Connecticut by Luke Wojenski and
+# Pariksheet Nanda in 2018.
+#
+# Released into the Public Domain:
+# https://creativecommons.org/publicdomain/zero/1.0/legalcode
+
+
+# Exit if any dependencies are missing.
+#
+# Globals: None
+# Arguments: None
+check_dependencies() {
+    local deps is_missing missing
+
+    missing=0
+    declare -A deps
+    deps=(
+	["umi_tools"]="https://github.com/CGATOxford/UMI-tools"
+	["fastx_clipper"]="http://hannonlab.cshl.edu/fastx_toolkit"
+	["bowtie"]="http://bowtie-bio.sourceforge.net"
+	["samtools"]="http://www.htslib.org"
+	["bedtools"]="https://bedtools.readthedocs.io"
+    )
+
+    for dep in ${!deps[@]}; do
+	command -v $dep > /dev/null || (( is_missing=1 ))
+	if [[ $is_missing -eq 1 ]]; then
+	    (( missing+=1 ))
+	    is_missing=
+	else
+	    deps[$dep]="found"
+	fi
+    done
+
+    if [[ $missing -ne 0 ]]; then
+	echo >&2 "Error: $missing missing dependencies.  Please install:"
+	for dep in ${!deps[@]}; do
+	    if ! [[ "${deps[$dep]}" == "found" ]]; then
+		echo >&2 "- $dep --- ${deps[$dep]}"
+	    fi
+	done
+	exit 1
+    fi
+}
+
+
+# Main program to process PRO-seq reads.
+#
+# Globals: None
+# Arguments:
+#  $1 (optional) path to promap.cfg file.
+# Returns: None
+main() {
+    # Make any errors fatal and propagate pipe error codes.
+    set -eo pipefail
+
+    check_dependencies
+}
+
+
+# Boilerplate for running `main()`.
+[[ "$0" != "$BASH_SOURCE" ]] || main "$@"
