@@ -113,6 +113,7 @@ config_read() {
 	# Most of these are pretty self-explanatory.
 	[reads_dir]=fastq
 	[align_ribosome_dir]=sam_rdna
+	[align_unmapped_dir]=fastq_unmapped
 	[align_bam_dir]=bam
 	# View processed reads on the UCSC genome browser.
 	[align_bigwig_dir]=bigwig
@@ -139,7 +140,7 @@ is_non_empty_file() {
 
     file=$1
     if [[ -f $file ]] &&
-	   [[ $(wc -c < $file) -ge 0 ]]; then
+	   [[ $(wc -c < $file) -ge 500 ]]; then
 	echo "  ...output already exits: $file"
     else
 	return 1
@@ -263,7 +264,7 @@ align_ribo() {
 
     log=${current[log_dir]}/05_rdna_separation.log
     current[file_rdna]=${config[align_ribosome_dir]}/${current[prefix]}_rdna.sam
-    current[file_not_rdna]=${config[tmp_dir]}/${current[prefix]}_not_rdna.sam
+    current[file_not_rdna]=${config[tmp_dir]}/${current[prefix]}_not_rdna.fastq
     echo "- Align to ribosomal DNA..."
     is_non_empty_file ${current[file_not_rdna]} && return
 
@@ -274,16 +275,78 @@ align_ribo() {
 	-v2 \
 	-k1 \
 	--sam \
-	--un ${current[file_rdna]} \
+	--un ${current[file_not_rdna]} \
 	${config[bowtie_rdna_prefix]} \
 	${current[file_rev_complement]} \
-	${current[file_not_rdna]} |& tee $log || {
+	${current[file_rdna]} |& tee $log || {
 	echo >&2 "...error encountered!  Check $log"
 	exit 1
     }
 
     echo "  ...saved file: ${current[file_rdna]}"
     echo "  ...saved file: ${current[file_not_rdna]}"
+}
+
+
+# Align to genome.
+#
+# Globals: config current
+# Arguments: None
+# Returns: Minimal description of processing.
+align_genome() {
+    local log
+
+    log=${current[log_dir]}/06_align.log
+    current[file_align]=${config[tmp_dir]}/${current[prefix]}.sam
+    current[file_not_align]=${config[align_unmapped_dir]}/${current[prefix]}_unmapped.fastq
+    echo "- Align to genome..."
+    is_non_empty_file ${current[file_align]} && return
+
+    mkdir -p ${config[align_unmapped_dir]}
+
+    bowtie \
+	-p ${config[cpus]} \
+	-v2 \
+	-m1 \
+	--sam \
+	--un ${current[file_not_align]} \
+	${config[bowtie_genome_prefix]} \
+	${current[file_not_rdna]} \
+	${current[file_align]} |& tee $log || {
+	echo >&2 "...error encountered!  Check $log"
+	exit 1
+    }
+
+    echo "  ...saved file: ${current[file_rdna]}"
+    echo "  ...saved file: ${current[file_not_rdna]}"
+}
+
+
+# Convert SAM to sorted and indexed BAM for downstream calculations.
+#
+# Globals: config current
+# Arguments: None
+# Returns: Minimal description of processing.
+sam_to_bam_indexed() {
+    local log
+
+    log=${current[log_dir]}/07_sam_to_bam.log
+    current[file_bam]=${config[align_bam_dir]}/${current[prefix]}.bam
+    current[file_bam_index]=${config[align_bam_dir]}/${current[prefix]}.bam.bai
+    current[file_converted]=${config[tmp_dir]}/${current[prefix]}_unsorted.bam
+    echo "- Converting SAM to indexed BAM..."
+    is_non_empty_file ${current[file_bam_index]} && return
+
+    mkdir -p ${config[align_bam_dir]}
+
+    samtools view ${current[file_align]} \
+	     -Sb > ${current[file_converted]}
+    echo "  ...saved file: ${current[file_converted]}"
+    samtools sort ${current[file_converted]} \
+	     ${current[file_bam]%.bam}
+    echo "  ...saved file: ${current[file_bam]}"
+    samtools index ${current[file_bam]}
+    echo "  ...saved file: ${current[file_bam_index]}"
 }
 
 
@@ -319,6 +382,8 @@ main() {
 	trim
 	rev_complement
 	align_ribo
+	align_genome
+	sam_to_bam_indexed
     done
 }
 

@@ -4,3 +4,5 @@ fastq/
 # Output
 log/
 sam_rdna/
+fastq_unmapped/
+bam/
