@@ -30,11 +30,11 @@ check_dependencies() {
     missing=0
     declare -A deps
     deps=(
-	["umi_tools"]="https://github.com/CGATOxford/UMI-tools"
-	["fastx_clipper"]="http://hannonlab.cshl.edu/fastx_toolkit"
-	["bowtie"]="http://bowtie-bio.sourceforge.net"
-	["samtools"]="http://www.htslib.org"
-	["bedtools"]="https://bedtools.readthedocs.io"
+	[umi_tools]=https://github.com/CGATOxford/UMI-tools
+	[fastx_clipper]=http://hannonlab.cshl.edu/fastx_toolkit
+	[bowtie]=http://bowtie-bio.sourceforge.net
+	[samtools]=http://www.htslib.org
+	[bedtools]=https://bedtools.readthedocs.io
     )
 
     for dep in ${!deps[@]}; do
@@ -43,14 +43,14 @@ check_dependencies() {
 	    (( missing+=1 ))
 	    is_missing=
 	else
-	    deps[$dep]="found"
+	    deps[$dep]=found
 	fi
     done
 
     if [[ $missing -ne 0 ]]; then
 	echo >&2 "Error: $missing missing dependencies.  Please install:"
 	for dep in ${!deps[@]}; do
-	    if ! [[ "${deps[$dep]}" == "found" ]]; then
+	    if ! [[ "${deps[$dep]}" == found ]]; then
 		echo >&2 "- $dep --- ${deps[$dep]}"
 	    fi
 	done
