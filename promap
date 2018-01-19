@@ -403,34 +403,40 @@ suppressPackageStartupMessages(library(rtracklayer))
 gal <- GenomicAlignments::readGAlignments("${current[file_bam]}")
 gal <- keepStandardChromosomes(gal, pruning.mode = "coarse")
 cov <- function(gal, strand) {
-    gr <- as(coverage(gal[strand(gal) == strand]), "GRanges")
+    gr <- as(gal[strand(gal) == strand], "GRanges")
+    # Shorten to single base.
+    gr <- resize(gr, 1, fix = "end")
+    gr <- as(coverage(gr), "GRanges")
     strand(gr) <- strand
     if (strand == "-") {
+        # Graphically invert by setting negative value.
         score(gr) = -score(gr)
     }
+    # Save disk space by leaving out the zeros.
     gr[score(gr) != 0]
 }
 gr_plus <- cov(gal, "+")
 gr_minus <- cov(gal, "-")
-to_ucsc <- function(gr, name) {
-    strand <- substr(name, nchar(name) - 1, nchar(name))
-    ucsc <- new("UCSCData",
-                gr,
-                trackLine = new("BasicTrackLine",
-                                color = ifelse(strand == "+",
-                                               c(255L, 0L, 0L),
-                                               c(0L, 0L, 255L)),
-                                useScore = TRUE,
-                                name = name))
-    ucsc
+track <- function(gr, name) {
+    strand <- substr(name, nchar(name), nchar(name))
+    if (strand == "+") {
+        color <- c(255L, 0L, 0L)
+    } else {
+        color <- c(0L, 0L, 255L)
+    }
+    new("UCSCData",
+        gr,
+        trackLine = new("GraphTrackLine",
+                        type = "bedGraph",
+                        name = name,
+                        visibility = "full",
+                        color = color))
 }
-ucsc <- List("PRO_seq_+" = to_ucsc(gr_plus, "PRO_seq+"),
-             "PRO_seq_-" = to_ucsc(gr_minus, "PRO_seq-"))
+ucsc <- List("PRO_seq+" = track(gr_plus, "PRO_seq+"),
+             "PRO_seq-" = track(gr_minus, "PRO_seq-"))
 str(ucsc)
 export(ucsc, "${current[file_bedgraph]}")
-
 EOF
-
     echo "  ...saved file: ${current[file_bedgraph]}"
 }
 
