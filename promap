@@ -11,7 +11,7 @@
 # - fastx-toolkit --- http://hannonlab.cshl.edu/fastx_toolkit
 # - bowtie        --- http://bowtie-bio.sourceforge.net
 # - samtools      --- http://www.htslib.org
-# - bedtools      --- https://bedtools.readthedocs.io
+# - R             --- https://www.r-project.org
 #
 # Written at the University of Connecticut by Luke Wojenski and
 # Pariksheet Nanda in 2018.
@@ -41,7 +41,7 @@ check_dependencies() {
 	[fastx_reverse_complement]=http://hannonlab.cshl.edu/fastx_toolkit
 	[bowtie]=http://bowtie-bio.sourceforge.net
 	[samtools]=http://www.htslib.org
-	[bedtools]=https://bedtools.readthedocs.io
+	[R]=https://www.r-project.org
     )
 
     for dep in ${!deps[@]}; do
@@ -116,7 +116,7 @@ config_read() {
 	[align_unmapped_dir]=fastq_unmapped
 	[align_bam_dir]=bam
 	# View processed reads on the UCSC genome browser.
-	[align_bigwig_dir]=bigwig
+	[align_bedgraph_dir]=bedgraph
     )
     while read line
     do
@@ -331,22 +331,107 @@ sam_to_bam_indexed() {
     local log
 
     log=${current[log_dir]}/07_sam_to_bam.log
-    current[file_bam]=${config[align_bam_dir]}/${current[prefix]}.bam
-    current[file_bam_index]=${config[align_bam_dir]}/${current[prefix]}.bam.bai
+    current[file_bam_dup]=${config[tmp_dir]}/${current[prefix]}_dups.bam
+    current[file_bam_dup_index]=${current[file_bam_dup]}.bai
     current[file_converted]=${config[tmp_dir]}/${current[prefix]}_unsorted.bam
     echo "- Converting SAM to indexed BAM..."
-    is_non_empty_file ${current[file_bam_index]} && return
-
-    mkdir -p ${config[align_bam_dir]}
+    is_non_empty_file ${current[file_bam_dup_index]} && return
 
     samtools view ${current[file_align]} \
 	     -Sb > ${current[file_converted]}
     echo "  ...saved file: ${current[file_converted]}"
     samtools sort ${current[file_converted]} \
-	     ${current[file_bam]%.bam}
+	     ${current[file_bam_dup]%.bam}
+    echo "  ...saved file: ${current[file_bam_dup]}"
+    samtools index ${current[file_bam_dup]}
+    echo "  ...saved file: ${current[file_bam_dup_index]}"
+}
+
+
+# Remove duplicate reads.
+#
+# Globals: config current
+# Arguments: None
+# Returns: Minimal description of processing.
+umi_deduplicate() {
+    local log
+
+    log=${current[log_dir]}/08_umi_deduplicate.log
+    current[file_bam]=${config[align_bam_dir]}/${current[prefix]}.bam
+    current[file_bam_index]=${current[file_bam]}.bai
+
+    echo "- De-duplicating reads using UMIs..."
+    is_non_empty_file ${current[file_bam_index]} && return
+
+    mkdir -p ${config[align_bam_dir]}
+
+    umi_tools \
+	dedup \
+	--output-stats=$log \
+	-L $log \
+	-I ${current[file_bam_dup]} \
+	-S ${current[file_bam]} || {
+	echo >&2 "  ...error encountered!  Check $log"
+	exit 1
+    }
     echo "  ...saved file: ${current[file_bam]}"
     samtools index ${current[file_bam]}
     echo "  ...saved file: ${current[file_bam_index]}"
+}
+
+
+# Convert BAM to bedgraph.
+#
+# Globals: config current
+# Arguments: None
+# Returns: Minimal description of processing.
+bam_to_bedgraph() {
+    local log
+
+    log=${current[log_dir]}/09_bam_to_bedgraph.log
+    current[file_bedgraph]=${config[align_bedgraph_dir]}/${current[prefix]}.bedgraph.gz
+
+    echo "- Converting BAM to bedgraph..."
+    is_non_empty_file ${current[file_bedgraph]} && return
+
+    mkdir -p ${config[align_bedgraph_dir]}
+
+    R -q --vanilla <<-EOF |& tee $log
+#options(error = traceback)
+suppressPackageStartupMessages(library(rtracklayer))
+
+gal <- GenomicAlignments::readGAlignments("${current[file_bam]}")
+gal <- keepStandardChromosomes(gal, pruning.mode = "coarse")
+cov <- function(gal, strand) {
+    gr <- as(coverage(gal[strand(gal) == strand]), "GRanges")
+    strand(gr) <- strand
+    if (strand == "-") {
+        score(gr) = -score(gr)
+    }
+    gr[score(gr) != 0]
+}
+gr_plus <- cov(gal, "+")
+gr_minus <- cov(gal, "-")
+to_ucsc <- function(gr, name) {
+    strand <- substr(name, nchar(name) - 1, nchar(name))
+    ucsc <- new("UCSCData",
+                gr,
+                trackLine = new("BasicTrackLine",
+                                color = ifelse(strand == "+",
+                                               c(255L, 0L, 0L),
+                                               c(0L, 0L, 255L)),
+                                useScore = TRUE,
+                                name = name))
+    ucsc
+}
+ucsc <- List("PRO_seq_+" = to_ucsc(gr_plus, "PRO_seq+"),
+             "PRO_seq_-" = to_ucsc(gr_minus, "PRO_seq-"))
+str(ucsc)
+export(ucsc, "${current[file_bedgraph]}")
+
+EOF
+
+    echo "  ...saved file: ${current[file_bedgraph]}"
 }
 
 
@@ -384,6 +469,8 @@ main() {
 	align_ribo
 	align_genome
 	sam_to_bam_indexed
+	umi_deduplicate
+	bam_to_bedgraph
     done
 }
 

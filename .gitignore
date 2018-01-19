@@ -6,3 +6,4 @@ log/
 sam_rdna/
 fastq_unmapped/
 bam/
+bedgraph/
