@@ -93,6 +93,7 @@ config_read() {
 	#
 	### Inputs. ###
 	#
+	[cpus]=$(nproc)
 	[tmp_dir]=/tmp
 	[umi_pattern]=NNNNNN
 	[adapter]=
@@ -101,7 +102,7 @@ config_read() {
 	# Bowtie genome file "prefix".
 	[bowtie_genome_prefix]=
 	# Filter out rDNA using NCBI rDNA genome reference.
-	[bowtie_rdna_dir]=
+	[bowtie_rdna_prefix]=
 	# Concatenated genomes of sample genome and spike-in genome.
 	[bedtools_chrominfo_file]=
 	#
@@ -252,6 +253,40 @@ rev_complement() {
 }
 
 
+# Separate out ribosomal DNA reads.
+#
+# Globals: config current
+# Arguments: None
+# Returns: Minimal description of processing.
+align_ribo() {
+    local log
+
+    log=${current[log_dir]}/05_rdna_separation.log
+    current[file_rdna]=${config[align_ribosome_dir]}/${current[prefix]}_rdna.sam
+    current[file_not_rdna]=${config[tmp_dir]}/${current[prefix]}_not_rdna.sam
+    echo "- Align to ribosomal DNA..."
+    is_non_empty_file ${current[file_not_rdna]} && return
+
+    mkdir -p ${config[align_ribosome_dir]}
+
+    bowtie \
+	-p ${config[cpus]} \
+	-v2 \
+	-k1 \
+	--sam \
+	--un ${current[file_rdna]} \
+	${config[bowtie_rdna_prefix]} \
+	${current[file_rev_complement]} \
+	${current[file_not_rdna]} |& tee $log || {
+	echo >&2 "...error encountered!  Check $log"
+	exit 1
+    }
+
+    echo "  ... saved file: ${current[file_rdna]}"
+    echo "  ... saved file: ${current[file_not_rdna]}"
+}
+
+
 # Main program to process PRO-seq reads.
 #
 # Globals: current
@@ -283,6 +318,7 @@ main() {
 	clip
 	trim
 	rev_complement
+	align_ribo
     done
 }
 
