@@ -171,7 +171,7 @@ umi_extract() {
 }
 
 
-# Extract UMIs and concatenate them to the fastq names.
+# Clip off adapter and discard very short reads.
 #
 # Globals: config current
 # Arguments: None
