@@ -20,6 +20,11 @@
 # https://creativecommons.org/publicdomain/zero/1.0/legalcode
 
 
+# Global variables.
+declare -A config
+declare -A current
+
+
 # Exit if any dependencies are missing.
 #
 # Globals: None
@@ -59,17 +64,122 @@ check_dependencies() {
 }
 
 
-# Main program to process PRO-seq reads.
+# Read configuration file key=value lines.
 #
-# Globals: None
+# Globals: config
 # Arguments:
 #  $1 (optional) path to promap.cfg file.
 # Returns: None
+config_read() {
+    local file_config line key
+
+    if [[ -z "$1" ]]; then
+	file_config="promap.cfg"
+    else
+	file_config="$1"
+    fi
+
+    if ! [[ -f "$file_config" ]]; then
+	echo >&2 "Error: no such input file: $file_config"
+	exit 1
+    fi
+
+    # Securely populate bash array from input file, guarded from code
+    # injection per https://unix.stackexchange.com/a/206216
+    config=(
+	# Set default values in config array.
+	#
+	### Inputs. ###
+	#
+	# Temporary directory to store UMI extract processed files.
+	[umi_tmp_dir]=/tmp
+	# Bowtie genome file "prefix".
+	[bowtie_genome_prefix]=
+	# Filter out rDNA using NCBI rDNA genome reference.
+	[bowtie_rdna_dir]=
+	# Concatenated genomes of sample genome and spike-in genome.
+	[bedtools_chrominfo_file]=
+	#
+	### Outputs. ###
+	#
+	# Save log of each step.
+	[log_dir]=log
+	# Most of these are pretty self-explanatory.
+	[reads_dir]=fastq
+	[align_ribosome_dir]=sam_rdna
+	# We don't care for the SAM files, only the sorted and indexed
+	# bam files.
+	[align_tmp_dir]=/tmp
+	[align_bam_dir]=bam
+	# View processed reads on the UCSC genome browser.
+	[align_bigwig_dir]=bigwig
+    )
+    while read line
+    do
+	if echo $line | grep -F = &>/dev/null
+	then
+	    key=$(echo "$line" | cut -d '=' -f 1)
+	    config[$key]=$(echo "$line" | cut -d '=' -f 2-)
+	fi
+    done < $file_config
+}
+
+
+# Extract UMIs and concatenate them to the fastq names.
+#
+# Globals: config current
+# Arguments: None
+# Returns: Create file
+umi_extract() {
+    local log
+
+    log=${current[log_dir]}/01_umi_extract.log
+    current[file_umi]=${config[umi_tmp_dir]}/${current[prefix]}_umi_extracted.fastq
+
+    umi_tools \
+	extract \
+	--extract-method=string \
+	--bc-pattern=NNNNNN \
+	-L $log \
+	-I ${current[file_reads]} \
+	-S ${current[file_umi]} 1>/dev/null || {
+	echo >&2 "...error encountered!  Check $log"
+	exit 1
+    }
+    echo ${current[file_umi]}
+}
+
+
+# Main program to process PRO-seq reads.
+#
+# Globals: current
+# Arguments:
+#  $1 (optional) path to promap.cfg file.
+# Returns: Minimal description of processing with timestamps.
 main() {
     # Make any errors fatal and propagate pipe error codes.
     set -eo pipefail
 
     check_dependencies
+
+    config_read "$1"
+
+    if ! [[ -d ${config[reads_dir]} ]]; then
+	echo >&2 "Error: input reads directory does not exist: ${config[reads_dir]}"
+	exit 1
+    fi
+
+    for file_reads in ${config[reads_dir]}/*; do
+	current[file_reads]=$file_reads
+	current[prefix]=$(basename $file_reads)
+	current[prefix]=${current[prefix]%.fastq*}
+	current[log_dir]=${config[log_dir]}/${current[prefix]}
+	mkdir -p ${current[log_dir]}
+	echo "Started processing reads: $file_reads"
+	echo "- Extracting UMIs..."
+	file_output=$(umi_extract)
+	echo "  ... saved to $file_output"
+    done
 }
 
 
