@@ -95,6 +95,7 @@ config_read() {
 	[umi_pattern]=NNNNNN
 	[adapter]=
 	[read_length_min]=25
+	[read_length_max]=36
 	# Bowtie genome file "prefix".
 	[bowtie_genome_prefix]=
 	# Filter out rDNA using NCBI rDNA genome reference.
@@ -198,6 +199,32 @@ clip() {
 }
 
 
+# Trim reads down to maximum size for mappability calculation.
+#
+# Globals: config current
+# Arguments: None
+# Returns: Minimal description of processing.
+trim() {
+    local log
+
+    log=${current[log_dir]}/02_trim.log
+    current[file_trimmed]=${config[tmp_dir]}/${current[prefix]}_trimmed.fastq
+    echo "- Trimming reads to ${config[read_length_max]} bp..."
+    is_non_empty_file ${current[file_trimmed]} && return
+
+    fastx_clipper \
+	-Q33 \
+	-i ${current[file_clipped]} \
+	-o ${current[file_trimmed]} \
+	-l ${config[read_length_max]} |& tee $log || {
+	echo >&2 "...error encountered!  Check $log"
+	exit 1
+    }
+
+    echo "  ... saved file: ${current[file_trimmed]}"
+}
+
+
 # Main program to process PRO-seq reads.
 #
 # Globals: current
@@ -227,6 +254,7 @@ main() {
 	echo "Logging output to: ${current[log_dir]}/"
 	umi_extract
 	clip
+	trim
     done
 }
 
