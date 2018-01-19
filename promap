@@ -207,7 +207,7 @@ clip() {
 trim() {
     local log
 
-    log=${current[log_dir]}/02_trim.log
+    log=${current[log_dir]}/03_trim.log
     current[file_trimmed]=${config[tmp_dir]}/${current[prefix]}_trimmed.fastq
     echo "- Trimming reads to ${config[read_length_max]} bp..."
     is_non_empty_file ${current[file_trimmed]} && return
