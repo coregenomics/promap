@@ -91,8 +91,10 @@ config_read() {
 	#
 	### Inputs. ###
 	#
-	# Temporary directory to store UMI extract processed files.
-	[umi_tmp_dir]=/tmp
+	[tmp_dir]=/tmp
+	[umi_pattern]=NNNNNN
+	[adapter]=
+	[read_length_min]=25
 	# Bowtie genome file "prefix".
 	[bowtie_genome_prefix]=
 	# Filter out rDNA using NCBI rDNA genome reference.
@@ -107,9 +109,6 @@ config_read() {
 	# Most of these are pretty self-explanatory.
 	[reads_dir]=fastq
 	[align_ribosome_dir]=sam_rdna
-	# We don't care for the SAM files, only the sorted and indexed
-	# bam files.
-	[align_tmp_dir]=/tmp
 	[align_bam_dir]=bam
 	# View processed reads on the UCSC genome browser.
 	[align_bigwig_dir]=bigwig
@@ -125,28 +124,77 @@ config_read() {
 }
 
 
+# Check that file exists and is not empty.
+#
+# Globals: None
+# Arguments:
+#  $1 file
+# Returns: Exit code
+is_non_empty_file() {
+    local file
+
+    file=$1
+    if [[ -f $file ]] &&
+	   [[ $(wc -c < $file) -ge 0 ]]; then
+	echo "  ...output already exits: $file"
+    else
+	return 1
+    fi
+}
+
+
 # Extract UMIs and concatenate them to the fastq names.
 #
 # Globals: config current
 # Arguments: None
-# Returns: Create file
+# Returns: Minimal description of processing.
 umi_extract() {
     local log
 
     log=${current[log_dir]}/01_umi_extract.log
-    current[file_umi]=${config[umi_tmp_dir]}/${current[prefix]}_umi_extracted.fastq
+    current[file_umi]=${config[tmp_dir]}/${current[prefix]}_umi_extracted.fastq
+    echo "- Extracting UMIs with pattern ${config[umi_pattern]}..."
+    is_non_empty_file ${current[file_umi]} && return
 
     umi_tools \
 	extract \
 	--extract-method=string \
-	--bc-pattern=NNNNNN \
+	--bc-pattern=${config[umi_pattern]} \
 	-L $log \
 	-I ${current[file_reads]} \
 	-S ${current[file_umi]} 1>/dev/null || {
+	echo >&2 "  ...error encountered!  Check $log"
+	exit 1
+    }
+
+    echo "  ...saved file: ${current[file_umi]}"
+}
+
+
+# Extract UMIs and concatenate them to the fastq names.
+#
+# Globals: config current
+# Arguments: None
+# Returns: Minimal description of processing.
+clip() {
+    local log
+
+    log=${current[log_dir]}/02_clip.log
+    current[file_clipped]=${config[tmp_dir]}/${current[prefix]}_clipped.fastq
+    echo "- Clipping adapter ${config[adapter]} and discarding reads < ${config[read_length_min]} bp..."
+    is_non_empty_file ${current[file_clipped]} && return
+
+    fastx_clipper \
+	-Q33 \
+	-i ${current[file_umi]} \
+	-o ${current[file_clipped]} \
+	-a ${config[adapter]} \
+	-l ${config[read_length_min]} |& tee $log || {
 	echo >&2 "...error encountered!  Check $log"
 	exit 1
     }
-    echo ${current[file_umi]}
+
+    echo "  ... saved file: ${current[file_clipped]}"
 }
 
 
@@ -155,7 +203,7 @@ umi_extract() {
 # Globals: current
 # Arguments:
 #  $1 (optional) path to promap.cfg file.
-# Returns: Minimal description of processing with timestamps.
+# Returns: Minimal description of processing.
 main() {
     # Make any errors fatal and propagate pipe error codes.
     set -eo pipefail
@@ -175,10 +223,10 @@ main() {
 	current[prefix]=${current[prefix]%.fastq*}
 	current[log_dir]=${config[log_dir]}/${current[prefix]}
 	mkdir -p ${current[log_dir]}
-	echo "Started processing reads: $file_reads"
-	echo "- Extracting UMIs..."
-	file_output=$(umi_extract)
-	echo "  ... saved to $file_output"
+	echo "Started processing reads for: ${current[file_reads]}"
+	echo "Logging output to: ${current[log_dir]}/"
+	umi_extract
+	clip
     done
 }
 
