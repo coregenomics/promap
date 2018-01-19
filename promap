@@ -198,7 +198,7 @@ clip() {
 	exit 1
     }
 
-    echo "  ... saved file: ${current[file_clipped]}"
+    echo "  ...saved file: ${current[file_clipped]}"
 }
 
 
@@ -224,7 +224,7 @@ trim() {
 	exit 1
     }
 
-    echo "  ... saved file: ${current[file_trimmed]}"
+    echo "  ...saved file: ${current[file_trimmed]}"
 }
 
 
@@ -249,7 +249,7 @@ rev_complement() {
 	exit 1
     }
 
-    echo "  ... saved file: ${current[file_rev_complement]}"
+    echo "  ...saved file: ${current[file_rev_complement]}"
 }
 
 
@@ -282,8 +282,8 @@ align_ribo() {
 	exit 1
     }
 
-    echo "  ... saved file: ${current[file_rdna]}"
-    echo "  ... saved file: ${current[file_not_rdna]}"
+    echo "  ...saved file: ${current[file_rdna]}"
+    echo "  ...saved file: ${current[file_not_rdna]}"
 }
 
 
