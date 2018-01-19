@@ -25,7 +25,7 @@
 # Globals: None
 # Arguments: None
 check_dependencies() {
-    local deps is_missing missing
+    local deps dep is_missing missing
 
     missing=0
     declare -A deps
